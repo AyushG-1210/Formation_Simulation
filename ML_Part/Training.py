@@ -5,107 +5,119 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 import datetime
+import os
+from torch.cuda.amp import GradScaler, autocast # Import GradScaler and autocast
+
+# === Parameters ===
+MODEL_PATH = "team_model.pt"
+BATCH_SIZE = 4
+EPOCHS = 1200
+PATIENCE = 200
+LEARNING_RATE = 0.0005
+SEED = 42
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 # === Load Data ===
-X_players = np.load("Working_Data/X_players.npy")   # (samples, 22, 80, 2)
-X_ball = np.load("Working_Data/X_ball.npy")         # (samples, 80, 2)
-y_players = np.load("Working_Data/y_players.npy")   # (samples, 22, 20, 2)
+X_players = np.load("X_players.npy")
+X_ball    = np.load("X_ball.npy")
+y_players = np.load("y_players.npy")
 
-# Train-test split
+# === Train-test split ===
 X_p_train, X_p_test, X_b_train, X_b_test, y_train, y_test = train_test_split(
-    X_players, X_ball, y_players, test_size=0.2, random_state=42
+    X_players, X_ball, y_players, test_size=0.2, random_state=SEED
 )
 
-# Convert to PyTorch tensors
+# === Convert to Tensors ===
 X_p_train = torch.tensor(X_p_train, dtype=torch.float32)
 X_b_train = torch.tensor(X_b_train, dtype=torch.float32)
-y_train = torch.tensor(y_train, dtype=torch.float32)
-
-X_p_test = torch.tensor(X_p_test, dtype=torch.float32)
-X_b_test = torch.tensor(X_b_test, dtype=torch.float32)
-y_test = torch.tensor(y_test, dtype=torch.float32)
+y_train   = torch.tensor(y_train, dtype=torch.float32)
+X_p_test  = torch.tensor(X_p_test, dtype=torch.float32)
+X_b_test  = torch.tensor(X_b_test, dtype=torch.float32)
+y_test    = torch.tensor(y_test, dtype=torch.float32)
 
 # === DataLoader ===
-batch_size = 4
-
 train_dataset = TensorDataset(X_p_train, X_b_train, y_train)
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+train_loader  = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
 # === Model Definition ===
 class TeamMovementModel(nn.Module):
     def __init__(self, player_dim=2, ball_dim=2, hidden_size=128):
         super().__init__()
-        self.player_rnn = nn.LSTM(input_size=player_dim, hidden_size=hidden_size, batch_first=True)
-        self.ball_rnn = nn.LSTM(input_size=ball_dim, hidden_size=hidden_size, batch_first=True)
-        self.fc = nn.Linear(hidden_size * 2, 20 * 2)  # Predict 20 steps (x, y) for each player
+        self.player_rnn = nn.LSTM(player_dim, hidden_size, batch_first=True)
+        self.ball_rnn   = nn.LSTM(ball_dim, hidden_size, batch_first=True)
+        self.fc         = nn.Linear(hidden_size * 2, 20 * 2)
 
     def forward(self, x_players, x_ball):
-        batch_size, num_players, seq_len, _ = x_players.shape
+        B, P, T, _ = x_players.shape
+        _, (ball_h, _) = self.ball_rnn(x_ball)
+        ball_h = ball_h.squeeze(0)
+
         outputs = []
+        for i in range(P):
+            player_seq = x_players[:, i, :, :]
+            _, (player_h, _) = self.player_rnn(player_seq)
+            player_h = player_h.squeeze(0)
 
-        _, (ball_h, _) = self.ball_rnn(x_ball)  # (1, B, H)
-        ball_h = ball_h.squeeze(0)  # (B, H)
-
-        for i in range(num_players):
-            player_input = x_players[:, i, :, :]  # (B, 80, 2)
-            _, (player_h, _) = self.player_rnn(player_input)  # (1, B, H)
-            player_h = player_h.squeeze(0)  # (B, H)
-
-            combined = torch.cat([player_h, ball_h], dim=1)  # (B, 2H)
-            out = self.fc(combined).view(-1, 20, 2)  # (B, 20, 2)
-            outputs.append(out)
+            combined = torch.cat([player_h, ball_h], dim=1)
+            pred = self.fc(combined).view(-1, 20, 2)
+            outputs.append(pred)
 
         return torch.stack(outputs, dim=1)  # (B, 22, 20, 2)
 
-# === Initialize ===
+# === Training ===
 model = TeamMovementModel()
 loss_fn = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0005)
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-# === Training Loop ===
-epochs = 1200
-patience = 200
 best_loss = float('inf')
-epochs_no_improve = 0
+no_improve = 0
+scaler = GradScaler() # Initialize GradScaler
 
-for epoch in range(epochs):
+for epoch in range(EPOCHS):
     model.train()
-    running_loss = 0.0
+    total_loss = 0.0
 
-    for batch_x_p, batch_x_b, batch_y in train_loader:
-        pred = model(batch_x_p, batch_x_b)
-        loss = loss_fn(pred, batch_y)
-
+    for xb_p, xb_b, yb in train_loader:
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        with autocast(): # Use autocast for mixed precision
+            pred = model(xb_p, xb_b)
+            loss = loss_fn(pred, yb)
 
-        running_loss += loss.item() * batch_x_p.size(0)
+        scaler.scale(loss).backward() # Scale the loss and backpropagate
+        scaler.step(optimizer) # Update optimizer
+        scaler.update() # Update scaler
+        total_loss += loss.item() * xb_p.size(0)
 
-    epoch_loss = running_loss / len(train_loader.dataset)
+    epoch_loss = total_loss / len(train_loader.dataset)
 
-    if epoch % 50 == 0:
-        print(f"Epoch {epoch}, Loss: {epoch_loss:.5f}, Time: {datetime.datetime.now().strftime(' %H:%M:%S')}")
+    # Test evaluation every 20 epochs
+    if epoch % 20 == 0:
+        model.eval()
+        with torch.no_grad():
+            test_pred = model(X_p_test, X_b_test)
+            test_loss = loss_fn(test_pred, y_test).item()
+        print(f"[{epoch}] Train Loss: {epoch_loss:.6f} | Test Loss: {test_loss:.6f}")
+    elif epoch % 50 == 0:
+        print(f"[{epoch}] Train Loss: {epoch_loss:.6f} | Time: {datetime.datetime.now().strftime('%H:%M:%S')}")
 
+
+    # Early stopping
     if epoch_loss < best_loss - 1e-5:
         best_loss = epoch_loss
-        epochs_no_improve = 0
+        no_improve = 0
     else:
-        epochs_no_improve += 1
+        no_improve += 1
+        if no_improve >= PATIENCE:
+            print(f"Early stopping at epoch {epoch}")
+            break
 
-    if epochs_no_improve >= patience:
-        print(f"Early stopping at epoch {epoch}, best loss: {best_loss:.6f}")
-        break
+# === Save Model and Predictions ===
+torch.save(model.state_dict(), os.path.join(MODEL_PATH))
+print(f"Model saved to {MODEL_PATH}")
 
-# === Save Model ===
-torch.save(model.state_dict(), "ML_Part/team_model.pt")
-print("Model saved to team_model.pt")
-
-# === Evaluate on Test Sample ===
 model.eval()
 with torch.no_grad():
-    test_pred = model(X_p_test, X_b_test)  # (N, 22, 20, 2)
-    np.save("Working_Data/test_predictions.npy", test_pred.numpy())
-    print("Saved predictions to test_predictions.npy")
-
-# need to add test_loss check fro every 20 epochs and move the model to google colab for better training
+    final_pred = model(X_p_test, X_b_test)
+    np.save(os.path.join("test_predictions.npy"), final_pred.numpy())
+    print("Saved test predictions.")
