@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 import datetime
 import os
-from torch.cuda.amp import GradScaler, autocast # Import GradScaler and autocast
+from torch import autocast  # Only import autocast
 
 # === Parameters ===
 MODEL_PATH = "team_model.pt"
@@ -72,7 +72,6 @@ optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 best_loss = float('inf')
 no_improve = 0
-scaler = GradScaler() # Initialize GradScaler
 
 for epoch in range(EPOCHS):
     model.train()
@@ -80,13 +79,12 @@ for epoch in range(EPOCHS):
 
     for xb_p, xb_b, yb in train_loader:
         optimizer.zero_grad()
-        with autocast(): # Use autocast for mixed precision
+        with autocast():  # Use autocast for mixed precision
             pred = model(xb_p, xb_b)
             loss = loss_fn(pred, yb)
 
-        scaler.scale(loss).backward() # Scale the loss and backpropagate
-        scaler.step(optimizer) # Update optimizer
-        scaler.update() # Update scaler
+        loss.backward()        # Standard backward
+        optimizer.step()       # Standard optimizer step
         total_loss += loss.item() * xb_p.size(0)
 
     epoch_loss = total_loss / len(train_loader.dataset)
