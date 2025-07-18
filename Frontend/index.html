@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Formation Editor</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
+  <script src="sketch.js" defer></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #1e1e1e;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      border: 2px solid white;
+      margin-top: 10px;
+    }
+    #controls {
+      margin-top: 10px;
+    }
+    button, select, input {
+      margin: 5px;
+      padding: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Formation & Movement Editor (Web)</h1>
+  <div id="controls">
+    <button onclick="toggleMode()">Toggle Mode</button>
+    <button onclick="deselectPlayer()">Deselect</button>
+    <button onclick="undoLastPoint()">Undo Point</button>
+    <button onclick="saveFormation()">Save Formation</button>
+    <button onclick="submitForPrediction()">Submit for Prediction</button>
+    <button onclick="playAnimation()">Play</button>
+    <button onclick="pauseAnimation()">Pause</button>
+    <button onclick="resetAll()">Reset</button>
+  </div>
+</body>
+</html>
