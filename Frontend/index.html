@@ -23,24 +23,28 @@
     #controls {
       margin-top: 10px;
     }
-    button, select, input {
+    button {
       margin: 5px;
       padding: 10px;
       font-size: 14px;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
   </style>
 </head>
 <body>
-  <h1>Formation & Movement Editor (Web)</h1>
+  <h1>Formation & Movement Simulator</h1>
   <div id="controls">
-    <button onclick="toggleMode()">Toggle Mode</button>
-    <button onclick="deselectPlayer()">Deselect</button>
-    <button onclick="undoLastPoint()">Undo Point</button>
-    <button onclick="saveFormation()">Save Formation</button>
     <button onclick="submitForPrediction()">Submit for Prediction</button>
+    <button id="editBtn" onclick="toggleMode()" style="display:none;">Edit Manually</button>
+    <button id="saveBtn" onclick="saveFormation()" style="display:none;">Save Formation</button>
     <button onclick="playAnimation()">Play</button>
     <button onclick="pauseAnimation()">Pause</button>
     <button onclick="resetAll()">Reset</button>
+    <button onclick="assignRoles()">Assign Roles</button>
   </div>
 </body>
 </html>
