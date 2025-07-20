@@ -248,7 +248,7 @@ function saveFormation() {
     path: p.path.map(pt => [pt.x / width, pt.y / height]),
   }));
 
-  fetch("https://your-backend-url/save-formation", {
+  fetch("https://formation-simulation.onrender.com/predict", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -265,7 +265,7 @@ function submitForPrediction() {
     path: p.path.map(pt => [pt.x / width, pt.y / height]),
   }));
 
-  fetch("https://your-backend-url/predict", {
+  fetch("https://formation-simulation.onrender.com/predict", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
